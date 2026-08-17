@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 export default function ChartOfAccountsPage() {
   const router = useRouter()
@@ -14,16 +15,22 @@ export default function ChartOfAccountsPage() {
   const [search, setSearch] = useState('')
   const [filterCC, setFilterCC] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
 
   // Account form
   const [showAccountForm, setShowAccountForm] = useState(false)
   const [editAccount, setEditAccount] = useState<any>(null)
   const [accountForm, setAccountForm] = useState<any>({
     cost_center_id: '', code: '', description_pt: '', description_en: '',
-    acronym_company: '', acronym_agent: '', transaction_type: '', is_active: true,
+    acronym_company: '', acronym_agent: '', transaction_type: '', category: '', is_active: true,
+    modal_ids: [] as number[],
   })
   const [accountMsg, setAccountMsg] = useState('')
   const [accountLoading, setAccountLoading] = useState(false)
+
+  // Modals (transport modes) + per-account tagging
+  const [modals, setModals] = useState<any[]>([])
+  const [accountModals, setAccountModals] = useState<Record<string, number[]>>({})
 
   // Cost center form
   const [showCCForm, setShowCCForm] = useState(false)
@@ -37,6 +44,25 @@ export default function ChartOfAccountsPage() {
   const [selectedCCs, setSelectedCCs] = useState<string[]>([])
 
   const TRANSACTION_TYPES = ['Administrativo', 'Financeiro', 'Operacional', 'Serviço', 'Serviço Internacional']
+
+  const CATEGORIES = [
+    'ADM - ATIVO',
+    'ADM - COMERCIAL',
+    'ADM - DESPESAS SÓCIOS QUOTISTAS',
+    'ADM - EVENTOS',
+    'ADM - INFRA ESTRUTURA',
+    'ADM - PROCESSOS JUDICIAIS',
+    'ADM - RETIRADAS DOS SÓCIOS QUOTISTAS',
+    'ADM - SALÁRIOS E BENEFICIOS',
+    'ADM - T.I.',
+    'ADM - TERCEIROS',
+    'ADM - TREINAMENTOS E DEPESAS RH',
+    'Despesas Operacionais',
+    'FIN - DESPESAS FINANCEIRAS',
+    'FIN - TRANSFERÊNCIAS/APLICAÇÕES E RESGATES',
+    'TRIBUTOS',
+    'TRIBUTOS RELACIONADOS A PROCESSOS',
+  ]
 
   useEffect(() => { loadData() }, [])
 
@@ -57,13 +83,24 @@ export default function ChartOfAccountsPage() {
       .order('description_pt')
     setAccounts(acc ?? [])
 
+    const { data: md } = await supabase.from('modals').select('*').order('sort_order')
+    setModals(md ?? [])
+
+    const { data: cam } = await supabase.from('chart_of_accounts_modals').select('chart_of_accounts_id, modal_id')
+    const map: Record<string, number[]> = {}
+    for (const row of cam ?? []) {
+      if (!map[row.chart_of_accounts_id]) map[row.chart_of_accounts_id] = []
+      map[row.chart_of_accounts_id].push(row.modal_id)
+    }
+    setAccountModals(map)
+
     setLoading(false)
   }
 
   // ---- ACCOUNTS ----
   function openNewAccount() {
     setEditAccount(null)
-    setAccountForm({ cost_center_id: '', code: '', description_pt: '', description_en: '', acronym_company: '', acronym_agent: '', transaction_type: '', is_active: true })
+    setAccountForm({ cost_center_id: '', code: '', description_pt: '', description_en: '', acronym_company: '', acronym_agent: '', transaction_type: '', category: '', is_active: true, modal_ids: [] })
     setAccountMsg('')
     setShowAccountForm(true)
   }
@@ -78,10 +115,19 @@ export default function ChartOfAccountsPage() {
       acronym_company: a.acronym_company ?? '',
       acronym_agent:   a.acronym_agent   ?? '',
       transaction_type: a.transaction_type ?? '',
+      category:        a.category        ?? '',
       is_active:       a.is_active       ?? true,
+      modal_ids:       accountModals[a.id] ?? [],
     })
     setAccountMsg('')
     setShowAccountForm(true)
+  }
+
+  function toggleModal(modalId: number) {
+    setAccountForm((f: any) => ({
+      ...f,
+      modal_ids: f.modal_ids.includes(modalId) ? f.modal_ids.filter((m: number) => m !== modalId) : [...f.modal_ids, modalId],
+    }))
   }
 
   async function handleSaveAccount(e: React.FormEvent) {
@@ -97,15 +143,28 @@ export default function ChartOfAccountsPage() {
       acronym_company:  accountForm.acronym_company  || null,
       acronym_agent:    accountForm.acronym_agent    || null,
       transaction_type: accountForm.transaction_type || null,
+      category:         accountForm.category         || null,
       is_active:        accountForm.is_active,
     }
+
+    let accountId = editAccount?.id
 
     if (editAccount) {
       const { error } = await supabase.from('chart_of_accounts').update(payload).eq('id', editAccount.id)
       if (error) { setAccountMsg('Error saving'); setAccountLoading(false); return }
     } else {
-      const { error } = await supabase.from('chart_of_accounts').insert(payload)
+      const { data: inserted, error } = await supabase.from('chart_of_accounts').insert(payload).select().single()
       if (error) { setAccountMsg('Error saving'); setAccountLoading(false); return }
+      accountId = inserted?.id
+    }
+
+    if (accountId) {
+      await supabase.from('chart_of_accounts_modals').delete().eq('chart_of_accounts_id', accountId)
+      if (accountForm.modal_ids.length) {
+        await supabase.from('chart_of_accounts_modals').insert(
+          accountForm.modal_ids.map((modal_id: number) => ({ chart_of_accounts_id: accountId, modal_id }))
+        )
+      }
     }
 
     setAccountMsg('Saved!')
@@ -171,6 +230,34 @@ export default function ChartOfAccountsPage() {
     await loadData()
   }
 
+  // ---- EXPORT ----
+  function exportAccountsToExcel() {
+    const rows = filteredAccounts.map(a => ({
+      'Código': a.code || '',
+      'Descrição (PT)': a.description_pt || '',
+      'Descrição (EN)': a.description_en || '',
+      'Categoria': a.category || '',
+      'Cost Center': a.cost_center?.name || '',
+      'Tipo': a.transaction_type || '',
+      'Modais': (accountModals[a.id] ?? [])
+        .map(mid => modals.find(m => m.id === mid)?.label_pt)
+        .filter(Boolean)
+        .join(', '),
+      'Sigla CIA': a.acronym_company || '',
+      'Sigla Agente': a.acronym_agent || '',
+      'Status': a.is_active ? 'Ativo' : 'Inativo',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 40 }, { wch: 40 }, { wch: 22 }, { wch: 18 },
+      { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Plano de Contas')
+    const date = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `plano_de_contas_${date}.xlsx`)
+  }
+
   // ---- FILTERS ----
   const filteredAccounts = accounts.filter(a => {
     const matchSearch = !search ||
@@ -179,7 +266,8 @@ export default function ChartOfAccountsPage() {
       a.acronym_company?.toLowerCase().includes(search.toLowerCase())
     const matchCC = !filterCC || a.cost_center_id === filterCC
     const matchType = !filterType || a.transaction_type === filterType
-    return matchSearch && matchCC && matchType
+    const matchCategory = !filterCategory || a.category === filterCategory
+    return matchSearch && matchCC && matchType && matchCategory
   })
 
   const filteredCCs = costCenters.filter(cc =>
@@ -196,9 +284,9 @@ export default function ChartOfAccountsPage() {
         <div className="flex items-center gap-6">
           <button onClick={() => router.push('/dashboard')} className="text-lg font-semibold text-gray-900">Brisk System</button>
           <span className="text-gray-300">|</span>
-          <span className="text-sm text-gray-500">Chart of Accounts</span>
+          <span className="text-sm text-gray-500">Plano de Contas</span>
         </div>
-        <button onClick={() => router.push('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Back</button>
+        <button onClick={() => router.push('/cadastros')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Back</button>
       </nav>
 
       <div className="px-8 py-10 max-w-7xl mx-auto">
@@ -207,7 +295,7 @@ export default function ChartOfAccountsPage() {
         <div className="flex gap-1 mb-8 border-b border-gray-100">
           <button onClick={() => setActiveTab('accounts')}
             className={`px-4 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${activeTab === 'accounts' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            Chart of Accounts ({accounts.length})
+            Plano de Contas ({accounts.length})
           </button>
           <button onClick={() => setActiveTab('costcenters')}
             className={`px-4 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${activeTab === 'costcenters' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -223,6 +311,11 @@ export default function ChartOfAccountsPage() {
                 <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search description, code, acronym..."
                   className="border border-gray-200 rounded-lg px-4 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 w-64"/>
+                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                  <option value="">All Categories</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
                 <select value={filterCC} onChange={e => setFilterCC(e.target.value)}
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
                   <option value="">All Cost Centers</option>
@@ -247,6 +340,10 @@ export default function ChartOfAccountsPage() {
                     Clear All
                   </button>
                 )}
+                <button onClick={exportAccountsToExcel}
+                  className="text-sm text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition">
+                  ⇩ Exportar Excel
+                </button>
                 <button onClick={openNewAccount}
                   className="bg-gray-900 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800 transition">
                   + New Account
@@ -266,8 +363,10 @@ export default function ChartOfAccountsPage() {
                     <th className="px-4 py-3 text-gray-500 font-medium">Code</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Description (PT)</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Description (EN)</th>
+                    <th className="px-4 py-3 text-gray-500 font-medium">Category</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Cost Center</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Type</th>
+                    <th className="px-4 py-3 text-gray-500 font-medium">Modais</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">CIA</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Agent</th>
                     <th className="px-4 py-3 text-gray-500 font-medium">Status</th>
@@ -285,6 +384,7 @@ export default function ChartOfAccountsPage() {
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{a.code || '—'}</td>
                       <td className="px-4 py-3 text-gray-900">{a.description_pt}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{a.description_en || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{a.category || '—'}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{a.cost_center?.name || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs ${
@@ -293,6 +393,17 @@ export default function ChartOfAccountsPage() {
                           a.transaction_type === 'Financeiro' ? 'bg-amber-100 text-amber-700' :
                           'bg-gray-100 text-gray-600'
                         }`}>{a.transaction_type || '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(accountModals[a.id] ?? []).map(mid => {
+                            const m = modals.find(x => x.id === mid)
+                            return m ? (
+                              <span key={mid} className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]">{m.code.toUpperCase()}</span>
+                            ) : null
+                          })}
+                          {!(accountModals[a.id]?.length) && <span className="text-gray-300 text-xs">—</span>}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">{a.acronym_company || '—'}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">{a.acronym_agent || '—'}</td>
@@ -307,7 +418,7 @@ export default function ChartOfAccountsPage() {
                     </tr>
                   ))}
                   {filteredAccounts.length === 0 && (
-                    <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">No accounts found</td></tr>
+                    <tr><td colSpan={12} className="px-4 py-10 text-center text-gray-400 text-sm">No accounts found</td></tr>
                   )}
                 </tbody>
               </table>
@@ -393,6 +504,14 @@ export default function ChartOfAccountsPage() {
             <form onSubmit={handleSaveAccount} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                  <select value={accountForm.category} onChange={e => setAccountForm({...accountForm, category: e.target.value})}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <option value="">— None —</option>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Cost Center</label>
                   <select value={accountForm.cost_center_id} onChange={e => setAccountForm({...accountForm, cost_center_id: e.target.value})}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
@@ -405,6 +524,14 @@ export default function ChartOfAccountsPage() {
                   <input type="text" value={accountForm.code} onChange={e => setAccountForm({...accountForm, code: e.target.value})}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Type</label>
+                  <select value={accountForm.transaction_type} onChange={e => setAccountForm({...accountForm, transaction_type: e.target.value})}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    <option value="">— None —</option>
+                    {TRANSACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Description (PT) *</label>
                   <input type="text" value={accountForm.description_pt} onChange={e => setAccountForm({...accountForm, description_pt: e.target.value})} required
@@ -414,14 +541,6 @@ export default function ChartOfAccountsPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Description (EN)</label>
                   <input type="text" value={accountForm.description_en} onChange={e => setAccountForm({...accountForm, description_en: e.target.value})}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Type</label>
-                  <select value={accountForm.transaction_type} onChange={e => setAccountForm({...accountForm, transaction_type: e.target.value})}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    <option value="">— None —</option>
-                    {TRANSACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Acronym CIA</label>
@@ -440,6 +559,19 @@ export default function ChartOfAccountsPage() {
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${accountForm.is_active ? 'translate-x-6' : 'translate-x-1'}`}/>
                   </button>
                   <span className="text-sm text-gray-700">{accountForm.is_active ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Modais (para propostas)</label>
+                  <div className="flex flex-wrap gap-3">
+                    {modals.map(m => (
+                      <label key={m.id} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox"
+                          checked={accountForm.modal_ids.includes(m.id)}
+                          onChange={() => toggleModal(m.id)}/>
+                        {m.label_pt}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               {accountMsg && <p className={`text-sm ${accountMsg.includes('!') ? 'text-green-600' : 'text-red-500'}`}>{accountMsg}</p>}

@@ -9,9 +9,10 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [editClient, setEditClient] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState<'info' | 'address' | 'commercial' | 'contacts' | 'rates' | 'documents' | 'instructions'>('info')
+  const [activeTab, setActiveTab] = useState('info')
   const [contacts, setContacts] = useState<any[]>([{ name: '', job_title: '', email: '', phone: '', is_primary: true }])
   const [rates, setRates] = useState<any[]>([{ chart_of_account_id: '', description: '', currency_id: '', amount: '', is_mandatory: true }])
   const [documents, setDocuments] = useState<any[]>([])
@@ -23,14 +24,18 @@ export default function ClientsPage() {
   const [profiles, setProfiles] = useState<any[]>([])
   const [coaList, setCoaList] = useState<any[]>([])
   const [currencies, setCurrencies] = useState<any[]>([])
+  const [contactTypes, setContactTypes] = useState<any[]>([])
+  const [selectedTypes, setSelectedTypes] = useState<number[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const EMPTY_FORM = {
-    nickname: '', company_name: '', cnpj: '', cpf: '', segment: '', phone: '',
+    nickname: '', company_name: '', cnpj: '', cpf: '', segment: '', phone: '', email: '',
     zip_code: '', address_street: '', address_number: '', address_complement: '',
     address_district: '', address_city: '', address_state: '', address_country: 'BRASIL',
     accounting_code: '', sales_rep_id: '', inside_user_id: '',
     spread_pct: '', payment_terms_days: '0', is_active: true, notes: '',
+    supplier_category: '', supplier_payment_terms: '', bank_name: '', bank_agency: '',
+    bank_account: '', pix_key: '', website: '',
   }
   const [form, setForm] = useState<any>(EMPTY_FORM)
 
@@ -42,7 +47,7 @@ export default function ClientsPage() {
 
     const { data: c } = await supabase
       .from('clients')
-      .select('*, contacts:client_contacts(*), rates:client_fixed_rates(*), documents:client_documents(*), instructions:client_shipping_instructions(*)')
+      .select('*, contacts:client_contacts(*), rates:client_fixed_rates(*), documents:client_documents(*), instructions:client_shipping_instructions(*), types:client_types(contact_type_id)')
       .order('nickname')
     setClients(c ?? [])
 
@@ -61,6 +66,10 @@ export default function ClientsPage() {
     const { data: cur } = await supabase
       .from('currencies').select('id, code, name').eq('is_active', true).order('code')
     setCurrencies(cur ?? [])
+
+    const { data: ct } = await supabase
+      .from('contact_types').select('id, code, label_pt, sort_order').order('sort_order')
+    setContactTypes(ct ?? [])
 
     setLoading(false)
   }
@@ -105,6 +114,7 @@ export default function ClientsPage() {
     setRates([{ chart_of_account_id: '', description: '', currency_id: '', amount: '', is_mandatory: true }])
     setDocuments([])
     setInstructions([{ title: '', modal: 'all', instructions: '' }])
+    setSelectedTypes([])
     setActiveTab('info')
     setFormMsg('')
     setShowForm(true)
@@ -119,6 +129,7 @@ export default function ClientsPage() {
       cpf: c.cpf ?? '',
       segment: c.segment ?? '',
       phone: c.phone ?? '',
+      email: c.email ?? '',
       zip_code: c.zip_code ?? '',
       address_street: c.address_street ?? '',
       address_number: c.address_number ?? '',
@@ -134,6 +145,13 @@ export default function ClientsPage() {
       payment_terms_days: c.payment_terms_days ?? '0',
       is_active: c.is_active ?? true,
       notes: c.notes ?? '',
+      supplier_category: c.supplier_category ?? '',
+      supplier_payment_terms: c.supplier_payment_terms ?? '',
+      bank_name: c.bank_name ?? '',
+      bank_agency: c.bank_agency ?? '',
+      bank_account: c.bank_account ?? '',
+      pix_key: c.pix_key ?? '',
+      website: c.website ?? '',
     })
     setContacts(c.contacts?.length ? c.contacts : [{ name: '', job_title: '', email: '', phone: '', is_primary: true }])
     setRates(c.rates?.length ? c.rates.map((r: any) => ({
@@ -141,6 +159,7 @@ export default function ClientsPage() {
     })) : [{ chart_of_account_id: '', description: '', currency_id: '', amount: '', is_mandatory: true }])
     setDocuments(c.documents ?? [])
     setInstructions(c.instructions?.length ? c.instructions : [{ title: '', modal: 'all', instructions: '' }])
+    setSelectedTypes((c.types ?? []).map((t: any) => t.contact_type_id))
     setActiveTab('info')
     setFormMsg('')
     setShowForm(true)
@@ -148,7 +167,7 @@ export default function ClientsPage() {
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!editClient?.id) {
-      setFormMsg('Save the client first before uploading documents.')
+      setFormMsg('Save the contact first before uploading documents.')
       return
     }
     const file = e.target.files?.[0]
@@ -200,6 +219,12 @@ export default function ClientsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (selectedTypes.length === 0) {
+      setFormMsg('Select at least one contact type.')
+      return
+    }
+
     setFormLoading(true)
     setFormMsg('')
 
@@ -210,6 +235,7 @@ export default function ClientsPage() {
       cpf: form.cpf.replace(/\D/g, '') || null,
       segment: form.segment || null,
       phone: form.phone || null,
+      email: form.email || null,
       zip_code: form.zip_code.replace(/\D/g, '') || null,
       address_street: form.address_street || null,
       address_number: form.address_number || null,
@@ -225,17 +251,30 @@ export default function ClientsPage() {
       payment_terms_days: parseInt(form.payment_terms_days) || 0,
       is_active: form.is_active,
       notes: form.notes || null,
+      supplier_category: form.supplier_category || null,
+      supplier_payment_terms: form.supplier_payment_terms || null,
+      bank_name: form.bank_name || null,
+      bank_agency: form.bank_agency || null,
+      bank_account: form.bank_account || null,
+      pix_key: form.pix_key || null,
+      website: form.website || null,
     }
 
     let clientId = editClient?.id
     if (editClient) {
       const { error } = await supabase.from('clients').update(payload).eq('id', editClient.id)
-      if (error) { setFormMsg('Error saving client'); setFormLoading(false); return }
+      if (error) { setFormMsg('Error saving contact'); setFormLoading(false); return }
     } else {
       const { data, error } = await supabase.from('clients').insert(payload).select('id').single()
-      if (error || !data) { setFormMsg('Error saving client'); setFormLoading(false); return }
+      if (error || !data) { setFormMsg('Error saving contact'); setFormLoading(false); return }
       clientId = data.id
     }
+
+    // Contact Types
+    await supabase.from('client_types').delete().eq('client_id', clientId)
+    await supabase.from('client_types').insert(
+      selectedTypes.map(typeId => ({ client_id: clientId, contact_type_id: typeId }))
+    )
 
     // Contacts
     const validContacts = contacts.filter(c => c.name.trim())
@@ -271,7 +310,7 @@ export default function ClientsPage() {
       )
     }
 
-    setFormMsg(editClient ? 'Client updated!' : 'Client created!')
+    setFormMsg(editClient ? 'Contact updated!' : 'Contact created!')
     await loadData()
     setTimeout(() => setShowForm(false), 1000)
     setFormLoading(false)
@@ -288,21 +327,36 @@ export default function ClientsPage() {
     return `${(bytes / 1048576).toFixed(1)} MB`
   }
 
-  const filtered = clients.filter(c =>
-    c.nickname?.toLowerCase().includes(search.toLowerCase()) ||
-    c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.cnpj?.includes(search.replace(/\D/g, ''))
-  )
+  function typeLabels(c: any) {
+    const ids = (c.types ?? []).map((t: any) => t.contact_type_id)
+    return contactTypes.filter(t => ids.includes(t.id)).map(t => t.label_pt)
+  }
+
+  const clienteType = contactTypes.find(t => t.code === 'cliente')
+  const fornecedorType = contactTypes.find(t => t.code === 'fornecedor')
+  const isClientType = clienteType ? selectedTypes.includes(clienteType.id) : false
+  const isSupplierType = fornecedorType ? selectedTypes.includes(fornecedorType.id) : false
+
+  const filtered = clients.filter(c => {
+    const matchesSearch =
+      c.nickname?.toLowerCase().includes(search.toLowerCase()) ||
+      c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.cnpj?.includes(search.replace(/\D/g, '')) ||
+      c.email?.toLowerCase().includes(search.toLowerCase())
+    const matchesType = typeFilter === 'all' || (c.types ?? []).some((t: any) => String(t.contact_type_id) === typeFilter)
+    return matchesSearch && matchesType
+  })
 
   const tabs = [
-    { key: 'info',         label: 'Basic Info' },
-    { key: 'address',      label: 'Address' },
-    { key: 'commercial',   label: 'Commercial' },
-    { key: 'contacts',     label: 'Contacts' },
-    { key: 'rates',        label: 'Fixed Rates' },
-    { key: 'documents',    label: 'Documents' },
-    { key: 'instructions', label: 'Shipping Instructions' },
-  ] as const
+    { key: 'info', label: 'Basic Info' },
+    { key: 'address', label: 'Address' },
+    ...(isClientType ? [{ key: 'commercial', label: 'Commercial' }] : []),
+    { key: 'contacts', label: 'Contacts' },
+    ...(isClientType ? [{ key: 'rates', label: 'Fixed Rates' }] : []),
+    ...(isSupplierType ? [{ key: 'supplier', label: 'Supplier Info' }] : []),
+    { key: 'documents', label: 'Documents' },
+    ...(isClientType ? [{ key: 'instructions', label: 'Shipping Instructions' }] : []),
+  ]
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">Loading...</div>
@@ -314,26 +368,31 @@ export default function ClientsPage() {
         <div className="flex items-center gap-6">
           <button onClick={() => router.push('/dashboard')} className="text-lg font-semibold text-gray-900">Brisk System</button>
           <span className="text-gray-300">|</span>
-          <span className="text-sm text-gray-500">Clients</span>
+          <span className="text-sm text-gray-500">Cadastro Geral</span>
         </div>
-        <button onClick={() => router.push('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Back</button>
+        <button onClick={() => router.push('/cadastros')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Back</button>
       </nav>
 
       <div className="px-8 py-10 max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Clients</h2>
-            <p className="text-gray-500 text-sm mt-1">{clients.length} clients registered</p>
+            <h2 className="text-2xl font-semibold text-gray-900">Cadastro Geral</h2>
+            <p className="text-gray-500 text-sm mt-1">{clients.length} registros cadastrados</p>
           </div>
           <button onClick={openNew} className="bg-gray-900 text-white text-sm px-4 py-2.5 rounded-lg hover:bg-gray-800 transition">
-            + New Client
+            + Novo Registro
           </button>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 flex gap-3">
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search by nickname, company name or CNPJ..."
+            placeholder="Buscar por apelido, razão social, CNPJ ou email..."
             className="w-full max-w-md border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+            <option value="all">All types</option>
+            {contactTypes.map(t => <option key={t.id} value={t.id}>{t.label_pt}</option>)}
+          </select>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -344,8 +403,7 @@ export default function ClientsPage() {
                 <th className="px-6 py-4 text-gray-500 font-medium">Company</th>
                 <th className="px-6 py-4 text-gray-500 font-medium">CNPJ</th>
                 <th className="px-6 py-4 text-gray-500 font-medium">City</th>
-                <th className="px-6 py-4 text-gray-500 font-medium">Spread</th>
-                <th className="px-6 py-4 text-gray-500 font-medium">Terms</th>
+                <th className="px-6 py-4 text-gray-500 font-medium">Types</th>
                 <th className="px-6 py-4 text-gray-500 font-medium">Status</th>
                 <th className="px-6 py-4 text-gray-500 font-medium">Actions</th>
               </tr>
@@ -359,10 +417,13 @@ export default function ClientsPage() {
                     {c.cnpj ? c.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5') : '—'}
                   </td>
                   <td className="px-6 py-4 text-gray-500">{c.address_city ?? '—'}</td>
-                  <td className="px-6 py-4 text-gray-500">
-                    {c.spread_pct ? `${(c.spread_pct * 100).toFixed(1)}%` : '—'}
+                  <td className="px-6 py-4">
+                    <div className="flex flex-wrap gap-1 max-w-[220px]">
+                      {typeLabels(c).map((l: string) => (
+                        <span key={l} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] whitespace-nowrap">{l}</span>
+                      ))}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-500">{c.payment_terms_days ?? 0}d</td>
                   <td className="px-6 py-4">
                     <button onClick={() => toggleActive(c)}
                       className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${
@@ -377,7 +438,7 @@ export default function ClientsPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="px-6 py-10 text-center text-gray-400 text-sm">No clients found</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-400 text-sm">Nenhum registro encontrado</td></tr>
               )}
             </tbody>
           </table>
@@ -388,8 +449,25 @@ export default function ClientsPage() {
         <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl p-8 w-full max-w-4xl shadow-xl mx-4">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">{editClient ? 'Edit Client' : 'New Client'}</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{editClient ? 'Editar Registro' : 'Novo Registro'}</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+
+            {/* Contact Types */}
+            <div className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
+              <div className="bg-gray-700 text-white text-xs font-medium px-4 py-2">Tipos do Contato</div>
+              <div className="grid grid-cols-4 gap-3 p-4">
+                {contactTypes.map(t => (
+                  <label key={t.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={selectedTypes.includes(t.id)}
+                      onChange={() => setSelectedTypes(
+                        selectedTypes.includes(t.id) ? selectedTypes.filter(id => id !== t.id) : [...selectedTypes, t.id]
+                      )}
+                      className="rounded border-gray-300 text-gray-900 focus:ring-gray-900"/>
+                    {t.label_pt}
+                  </label>
+                ))}
+              </div>
             </div>
 
             {/* Tabs */}
@@ -442,6 +520,11 @@ export default function ClientsPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
                     <input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                    <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
                   </div>
                   <div>
@@ -504,8 +587,8 @@ export default function ClientsPage() {
                 </div>
               )}
 
-              {/* TAB: Commercial */}
-              {activeTab === 'commercial' && (
+              {/* TAB: Commercial (Cliente) */}
+              {activeTab === 'commercial' && isClientType && (
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Sales Rep (Internal)</label>
@@ -594,8 +677,8 @@ export default function ClientsPage() {
                 </div>
               )}
 
-              {/* TAB: Fixed Rates */}
-              {activeTab === 'rates' && (
+              {/* TAB: Fixed Rates (Cliente) */}
+              {activeTab === 'rates' && isClientType && (
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <p className="text-xs text-gray-500">Pre-defined charges automatically applied to this client's processes.</p>
@@ -651,12 +734,53 @@ export default function ClientsPage() {
                 </div>
               )}
 
+              {/* TAB: Supplier Info (Fornecedor) */}
+              {activeTab === 'supplier' && isSupplierType && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                    <input type="text" value={form.supplier_category} onChange={e => setForm({...form, supplier_category: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Payment Terms</label>
+                    <input type="text" value={form.supplier_payment_terms} onChange={e => setForm({...form, supplier_payment_terms: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Website</label>
+                    <input type="text" value={form.website} onChange={e => setForm({...form, website: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Bank Name</label>
+                    <input type="text" value={form.bank_name} onChange={e => setForm({...form, bank_name: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Agency</label>
+                    <input type="text" value={form.bank_agency} onChange={e => setForm({...form, bank_agency: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Account</label>
+                    <input type="text" value={form.bank_account} onChange={e => setForm({...form, bank_account: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">PIX Key</label>
+                    <input type="text" value={form.pix_key} onChange={e => setForm({...form, pix_key: e.target.value})}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"/>
+                  </div>
+                </div>
+              )}
+
               {/* TAB: Documents */}
               {activeTab === 'documents' && (
                 <div>
                   {!editClient && (
                     <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 mb-4">
-                      <p className="text-xs text-amber-700">Save the client first before uploading documents.</p>
+                      <p className="text-xs text-amber-700">Save the contact first before uploading documents.</p>
                     </div>
                   )}
                   {editClient && (
@@ -694,8 +818,8 @@ export default function ClientsPage() {
                 </div>
               )}
 
-              {/* TAB: Shipping Instructions */}
-              {activeTab === 'instructions' && (
+              {/* TAB: Shipping Instructions (Cliente) */}
+              {activeTab === 'instructions' && isClientType && (
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <p className="text-xs text-gray-500">Pre-defined shipping instructions sent to agents for this client.</p>
@@ -753,7 +877,7 @@ export default function ClientsPage() {
               <div className="flex gap-3 mt-6">
                 <button type="submit" disabled={formLoading}
                   className="flex-1 bg-gray-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50">
-                  {formLoading ? 'Saving...' : editClient ? 'Save Changes' : 'Create Client'}
+                  {formLoading ? 'Salvando...' : editClient ? 'Salvar Alterações' : 'Criar Registro'}
                 </button>
                 <button type="button" onClick={() => setShowForm(false)}
                   className="flex-1 border border-gray-200 text-gray-700 rounded-lg py-2.5 text-sm hover:bg-gray-50 transition">

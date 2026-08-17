@@ -31,9 +31,8 @@ export default function Dashboard() {
 
   const modules = [
     { title: 'User Management', description: 'Manage users and invitations', href: '/users', role: 'admin', color: 'bg-purple-50 border-purple-100 hover:border-purple-300' },
-    { title: 'Clients', description: 'Manage client portfolio', href: '/clients', role: 'all', color: 'bg-blue-50 border-blue-100 hover:border-blue-300' },
-    { title: 'Suppliers', description: 'Manage suppliers', href: '/suppliers', role: 'all', color: 'bg-green-50 border-green-100 hover:border-green-300' },
-    { title: 'International Agents', description: 'Manage overseas agents', href: '/agents', role: 'all', color: 'bg-amber-50 border-amber-100 hover:border-amber-300' },
+    { title: 'Cadastros', description: 'Clientes, fornecedores, agentes, plano de contas, portos, recintos, incoterms', href: '/cadastros', role: 'all', color: 'bg-blue-50 border-blue-100 hover:border-blue-300' },
+    { title: 'Comercial', description: 'Propostas comerciais e processos de venda', href: '/comercial', role: 'all', color: 'bg-emerald-50 border-emerald-100 hover:border-emerald-300' },
   ]
 
   const visibleModules = modules.filter(m => m.role === 'all' || profile?.role === m.role)
