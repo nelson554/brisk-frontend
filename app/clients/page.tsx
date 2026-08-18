@@ -27,6 +27,9 @@ export default function ClientsPage() {
   const [contactTypes, setContactTypes] = useState<any[]>([])
   const [selectedTypes, setSelectedTypes] = useState<number[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [mergeSuggestions, setMergeSuggestions] = useState<any[]>([])
+  const [resolvingSuggestion, setResolvingSuggestion] = useState<string | null>(null)
 
   const EMPTY_FORM = {
     nickname: '', company_name: '', cnpj: '', cpf: '', segment: '', phone: '', email: '',
@@ -44,6 +47,14 @@ export default function ClientsPage() {
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/'); return }
+    setUserId(user.id)
+
+    const { data: ms } = await supabase
+      .from('client_merge_suggestions')
+      .select('*, client:clients!client_merge_suggestions_client_id_fkey(nickname, company_name)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setMergeSuggestions(ms ?? [])
 
     const { data: c } = await supabase
       .from('clients')
@@ -72,6 +83,31 @@ export default function ClientsPage() {
     setContactTypes(ct ?? [])
 
     setLoading(false)
+  }
+
+  const SUGGESTION_FIELD_LABELS: Record<string, string> = {
+    email: 'Email', phone: 'Telefone', address_city: 'Cidade', address_state: 'Estado', address_street: 'Endereço',
+  }
+
+  async function resolveSuggestion(suggestion: any, approve: boolean) {
+    setResolvingSuggestion(suggestion.id)
+    try {
+      if (approve) {
+        const { error: updError } = await supabase
+          .from('clients')
+          .update(suggestion.suggested_fields)
+          .eq('id', suggestion.client_id)
+        if (updError) { alert('Erro ao preencher: ' + updError.message); return }
+      }
+      const { error: resError } = await supabase
+        .from('client_merge_suggestions')
+        .update({ status: approve ? 'approved' : 'rejected', resolved_at: new Date().toISOString(), resolved_by: userId })
+        .eq('id', suggestion.id)
+      if (resError) { alert('Erro: ' + resError.message); return }
+      loadData()
+    } finally {
+      setResolvingSuggestion(null)
+    }
   }
 
   async function lookupCNPJ(cnpj: string) {
@@ -383,6 +419,42 @@ export default function ClientsPage() {
             + Novo Registro
           </button>
         </div>
+
+        {mergeSuggestions.length > 0 && (
+          <div className="mb-6 bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-medium text-blue-900">
+              🔄 {mergeSuggestions.length} sugestão(ões) de atualização vindas do Brisk Connect (CRM)
+            </p>
+            {mergeSuggestions.map((s: any) => (
+              <div key={s.id} className="bg-white rounded-lg border border-blue-100 px-4 py-3 flex items-center justify-between gap-4">
+                <div className="text-sm">
+                  <p className="text-gray-900">
+                    <strong>{s.client?.nickname || s.client?.company_name}</strong> — o lead <em>{s.source_lead_label}</em> convertido no CRM sugere preencher:
+                  </p>
+                  <p className="text-gray-500 text-xs mt-1">
+                    {Object.entries(s.suggested_fields).map(([k, v]: [string, any]) => `${SUGGESTION_FIELD_LABELS[k] || k}: ${v}`).join(' · ')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => resolveSuggestion(s, true)}
+                    disabled={resolvingSuggestion === s.id}
+                    className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
+                  >
+                    Preencher
+                  </button>
+                  <button
+                    onClick={() => resolveSuggestion(s, false)}
+                    disabled={resolvingSuggestion === s.id}
+                    className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
+                  >
+                    Ignorar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="mb-6 flex gap-3">
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
