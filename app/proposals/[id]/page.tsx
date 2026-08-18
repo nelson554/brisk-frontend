@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { PageHeader } from '@/components/AppHeader'
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Rascunho' },
@@ -247,26 +248,15 @@ export default function ProposalDetailPage() {
 
   if (loading || !headerForm) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <main style={{ minHeight: '100vh', background: '#f2f2f7' }} className="flex items-center justify-center">
         <p className="text-gray-400 text-sm">Carregando...</p>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-6">
-          <button onClick={() => router.push('/dashboard')} className="text-lg font-semibold text-gray-900">Brisk System</button>
-          <span className="text-gray-300">|</span>
-          <button onClick={() => router.push('/comercial')} className="text-sm text-gray-500 hover:text-gray-900 transition">Comercial</button>
-          <span className="text-gray-300">/</span>
-          <button onClick={() => router.push('/proposals')} className="text-sm text-gray-500 hover:text-gray-900 transition">Propostas</button>
-          <span className="text-gray-300">/</span>
-          <span className="text-sm text-gray-900 font-medium">{proposal?.reference_number}</span>
-        </div>
-        <button onClick={() => router.push('/proposals')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Voltar</button>
-      </nav>
+    <main style={{ minHeight: '100vh', background: '#f2f2f7' }}>
+      <PageHeader backHref="/proposals" backLabel="Propostas" />
 
       <div className="px-8 py-10 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">

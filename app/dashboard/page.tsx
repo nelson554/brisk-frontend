@@ -3,6 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { Building2, Briefcase, Users, Clock } from 'lucide-react'
+import { HubHeader, ModuleGrid } from '@/components/AppHeader'
+
+function capitalize(s: string) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s
+}
+
+function getGreeting() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Bom dia'
+  if (h < 18) return 'Boa tarde'
+  return 'Boa noite'
+}
 
 export default function Dashboard() {
   const router = useRouter()
@@ -24,54 +37,33 @@ export default function Dashboard() {
     load()
   }, [])
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-    router.push('/')
-  }
-
   const modules = [
-    { title: 'User Management', description: 'Manage users and invitations', href: '/users', role: 'admin', color: 'bg-purple-50 border-purple-100 hover:border-purple-300' },
-    { title: 'Cadastros', description: 'Clientes, fornecedores, agentes, plano de contas, portos, recintos, incoterms', href: '/cadastros', role: 'all', color: 'bg-blue-50 border-blue-100 hover:border-blue-300' },
-    { title: 'Comercial', description: 'Propostas comerciais e processos de venda', href: '/comercial', role: 'all', color: 'bg-emerald-50 border-emerald-100 hover:border-emerald-300' },
+    { key: 'cadastros', label: 'Cadastros', description: 'Clientes, fornecedores, agentes, plano de contas, portos, recintos, incoterms', icon: Building2, color: '#0071e3', href: '/cadastros', role: 'all' },
+    { key: 'comercial', label: 'Comercial', description: 'Propostas comerciais e processos de venda', icon: Briefcase, color: '#30d158', href: '/comercial', role: 'all' },
+    { key: 'users', label: 'Usuários', description: 'Gerenciar usuários e convites', icon: Users, color: '#bf5af2', href: '/users', role: 'admin' },
   ]
 
   const visibleModules = modules.filter(m => m.role === 'all' || profile?.role === m.role)
+  const firstName = profile?.full_name ? capitalize(profile.full_name.split(' ')[0]) : ''
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center">
-        <h1 className="text-lg font-semibold text-gray-900">Brisk System</h1>
-        <div className="flex items-center gap-4">
-          {profile && (
-            <span className="text-sm text-gray-500">
-              {profile.full_name} · <span className="capitalize">{profile.role}</span>
-            </span>
-          )}
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-500 hover:text-gray-900 transition"
-          >
-            Sign out
-          </button>
-        </div>
-      </nav>
+    <main style={{ minHeight: '100vh', background: '#f2f2f7' }}>
+      <HubHeader
+        title={`${getGreeting()}${firstName ? `, ${firstName}` : ''}!`}
+        subtitle={`Bem-vindo ao painel Brisk System${profile?.role ? ` · ${capitalize(profile.role)}` : ''}`}
+      />
 
-      <div className="px-8 py-10 max-w-5xl mx-auto">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">Dashboard</h2>
-        <p className="text-gray-500 text-sm mb-10">Welcome to Brisk Freight Forwarder System.</p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {visibleModules.map(m => (
-            <button
-              key={m.href}
-              onClick={() => router.push(m.href)}
-              className={`text-left p-6 rounded-2xl border transition ${m.color}`}
-            >
-              <h3 className="font-semibold text-gray-900 mb-1">{m.title}</h3>
-              <p className="text-sm text-gray-500">{m.description}</p>
-            </button>
-          ))}
+      <div style={{ padding: '28px 24px', maxWidth: 960, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#8e8e93', marginBottom: 24 }}>
+          <Clock style={{ width: 14, height: 14 }} />
+          <span>{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
         </div>
+
+        <p style={{ fontSize: 11, fontWeight: 600, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 18 }}>
+          Módulos
+        </p>
+
+        <ModuleGrid modules={visibleModules} />
       </div>
     </main>
   )

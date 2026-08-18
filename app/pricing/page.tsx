@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { PageHeader } from '@/components/AppHeader'
 
 const inputClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900'
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
@@ -166,17 +167,8 @@ export default function PricingPage() {
   })
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-6">
-          <button onClick={() => router.push('/dashboard')} className="text-lg font-semibold text-gray-900">Brisk System</button>
-          <span className="text-gray-300">|</span>
-          <button onClick={() => router.push('/comercial')} className="text-sm text-gray-500 hover:text-gray-900 transition">Comercial</button>
-          <span className="text-gray-300">/</span>
-          <span className="text-sm text-gray-500">Pricing</span>
-        </div>
-        <button onClick={() => router.push('/comercial')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Voltar</button>
-      </nav>
+    <main style={{ minHeight: '100vh', background: '#f2f2f7' }}>
+      <PageHeader backHref="/comercial" backLabel="Comercial" />
 
       <div className="px-8 py-10 max-w-6xl mx-auto">
         <div className="flex justify-between items-start mb-8">

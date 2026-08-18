@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { PageHeader } from '@/components/AppHeader'
 
 export default function PortsAirportsPage() {
   const router = useRouter()
@@ -138,15 +139,8 @@ export default function PortsAirportsPage() {
   )
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-6">
-          <button onClick={() => router.push('/dashboard')} className="text-lg font-semibold text-gray-900">Brisk System</button>
-          <span className="text-gray-300">|</span>
-          <span className="text-sm text-gray-500">Portos e Aeroportos</span>
-        </div>
-        <button onClick={() => router.push('/cadastros')} className="text-sm text-gray-500 hover:text-gray-900 transition">← Voltar</button>
-      </nav>
+    <main style={{ minHeight: '100vh', background: '#f2f2f7' }}>
+      <PageHeader backHref="/cadastros" backLabel="Cadastros" />
 
       <div className="px-8 py-10 max-w-7xl mx-auto">
 
