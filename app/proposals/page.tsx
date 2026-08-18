@@ -373,7 +373,7 @@ export default function ProposalsPage() {
       p.reference_number?.toLowerCase().includes(search.toLowerCase()) ||
       p.client?.nickname?.toLowerCase().includes(search.toLowerCase()) ||
       p.client?.company_name?.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = !filterStatus || p.status === filterStatus
+    const matchStatus = !filterStatus || (filterStatus === 'approved' ? !!p.is_approved : p.status === filterStatus)
     return matchSearch && matchStatus
   })
 
@@ -436,9 +436,13 @@ export default function ProposalsPage() {
                   <td className="px-4 py-3 text-gray-500 text-xs">{p.inside_user?.full_name || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{p.shipment_type?.label_pt || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_COLORS[p.status] || 'bg-gray-100 text-gray-600'}`}>
-                      {STATUS_LABELS[p.status] || p.status}
-                    </span>
+                    {p.is_approved ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">🔒 Aprovada</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_COLORS[p.status] || 'bg-gray-100 text-gray-600'}`}>
+                        {STATUS_LABELS[p.status] || p.status}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <button onClick={() => router.push(`/proposals/${p.id}`)} className="text-xs text-gray-500 hover:text-gray-900 transition">Abrir</button>

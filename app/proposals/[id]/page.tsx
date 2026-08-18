@@ -7,10 +7,16 @@ import { supabase } from '@/lib/supabase'
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Rascunho' },
   { value: 'sent', label: 'Enviada' },
-  { value: 'approved', label: 'Aprovada' },
   { value: 'rejected', label: 'Rejeitada' },
   { value: 'cancelled', label: 'Cancelada' },
 ]
+
+const UNLOCK_ROLES = ['admin', 'commercial_supervisor']
+
+function fmtDateTime(v: string | null) {
+  if (!v) return '—'
+  return new Date(v).toLocaleString('pt-BR')
+}
 
 const inputClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900'
 const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
@@ -32,6 +38,8 @@ export default function ProposalDetailPage() {
   const [products, setProducts] = useState<any[]>([])
   const [msg, setMsg] = useState('')
   const [saving, setSaving] = useState(false)
+  const [myProfile, setMyProfile] = useState<any>(null)
+  const [approving, setApproving] = useState(false)
 
   // expand state
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
@@ -60,6 +68,11 @@ export default function ProposalDetailPage() {
   const carrierOptions = clients.filter((c: any) => [7, 11, 12, 15].some(t => c.type_ids?.includes(t)))
   const salesRepOptions = profiles.filter((p: any) => p.role === 'sales_rep')
 
+  const approvedByName = profiles.find((p: any) => p.id === proposal?.approved_by)?.full_name
+  const isLocked = !!proposal?.is_approved
+  const canUnlock = UNLOCK_ROLES.includes(myProfile?.role)
+  const readOnly = isLocked && !canUnlock
+
   // modal state: generic for product / route / freight / ncm / expense
   const [modal, setModal] = useState<{ type: string; parentId?: string; editing?: any } | null>(null)
   const [modalForm, setModalForm] = useState<any>({})
@@ -82,7 +95,40 @@ export default function ProposalDetailPage() {
       .single()
     setProposal(data)
     setHeaderForm(data)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: mp } = await supabase.from('profiles').select('id, full_name, role').eq('id', user.id).single()
+      setMyProfile(mp)
+    }
+
     setLoading(false)
+  }
+
+  async function handleApprove() {
+    if (!confirm('Aprovar esta proposta? Depois de aprovada, ela fica travada para edição — só admin ou supervisor comercial podem reabrir.')) return
+    setApproving(true)
+    setMsg('')
+    const { error } = await supabase.from('proposals').update({ is_approved: true }).eq('id', proposalId)
+    setApproving(false)
+    if (error) {
+      setMsg('Erro ao aprovar: ' + error.message)
+    } else {
+      loadHeader()
+    }
+  }
+
+  async function handleReopen() {
+    if (!confirm('Reabrir esta proposta para edição?')) return
+    setApproving(true)
+    setMsg('')
+    const { error } = await supabase.from('proposals').update({ is_approved: false }).eq('id', proposalId)
+    setApproving(false)
+    if (error) {
+      setMsg('Erro ao reabrir: ' + error.message)
+    } else {
+      loadHeader()
+    }
   }
 
   async function loadProducts() {
@@ -225,16 +271,52 @@ export default function ProposalDetailPage() {
       <div className="px-8 py-10 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">{proposal?.reference_number}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold text-gray-900">{proposal?.reference_number}</h2>
+              {isLocked && (
+                <span className="bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">🔒 Aprovada</span>
+              )}
+            </div>
             <p className="text-gray-500 text-sm">Aberta em {proposal?.opening_date ? new Date(proposal.opening_date + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</p>
+            {isLocked && (
+              <p className="text-gray-400 text-xs mt-0.5">
+                Aprovada em {fmtDateTime(proposal?.approved_at)}{approvedByName ? ` por ${approvedByName}` : ''}
+              </p>
+            )}
           </div>
-          <button
-            onClick={() => window.open(`/proposals/${proposalId}/imprimir`, '_blank', 'noopener,noreferrer')}
-            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-4 py-2 hover:bg-gray-50 transition flex items-center gap-2"
-          >
-            🖨 Gerar PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.open(`/proposals/${proposalId}/imprimir`, '_blank', 'noopener,noreferrer')}
+              className="text-sm text-gray-700 border border-gray-200 rounded-lg px-4 py-2 hover:bg-gray-50 transition flex items-center gap-2"
+            >
+              🖨 Gerar PDF
+            </button>
+            {!isLocked && (
+              <button
+                onClick={handleApprove}
+                disabled={approving}
+                className="text-sm text-white bg-green-600 rounded-lg px-4 py-2 hover:bg-green-700 transition disabled:opacity-50"
+              >
+                {approving ? 'Aprovando...' : '✅ Aprovar'}
+              </button>
+            )}
+            {isLocked && canUnlock && (
+              <button
+                onClick={handleReopen}
+                disabled={approving}
+                className="text-sm text-gray-700 border border-gray-200 rounded-lg px-4 py-2 hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                {approving ? 'Reabrindo...' : '🔓 Reabrir'}
+              </button>
+            )}
+          </div>
         </div>
+
+        {readOnly && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-4 py-2.5 mb-6">
+            Proposta aprovada — edição bloqueada. Somente admin ou supervisor comercial podem reabrir.
+          </div>
+        )}
 
         <div className="flex border-b border-gray-200 mb-6">
           <button onClick={() => setActiveTab('proposta')}
@@ -254,6 +336,7 @@ export default function ProposalDetailPage() {
         {/* ======= TAB: PROPOSTA ======= */}
         {activeTab === 'proposta' && (
           <form onSubmit={handleSaveHeader} className="bg-white rounded-2xl border border-gray-100 p-6 space-y-6">
+            <fieldset disabled={readOnly} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Cliente *</label>
@@ -385,20 +468,23 @@ export default function ProposalDetailPage() {
             <button type="submit" disabled={saving} className="bg-gray-900 text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50">
               {saving ? 'Salvando...' : 'Salvar Alterações'}
             </button>
+            </fieldset>
           </form>
         )}
 
         {/* ======= TAB: PRODUTOS ======= */}
         {activeTab === 'produtos' && (
           <div className="space-y-4">
-            <div className="flex justify-end">
-              <button
-                onClick={() => openModal('product')}
-                className="bg-emerald-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-emerald-700 transition"
-              >
-                + Produto
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => openModal('product')}
+                  className="bg-emerald-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-emerald-700 transition"
+                >
+                  + Produto
+                </button>
+              </div>
+            )}
 
             {products.length === 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
@@ -424,8 +510,12 @@ export default function ProposalDetailPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button onClick={(e) => { e.stopPropagation(); openModal('product', undefined, product) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
-                      <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_products', product.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                      {!readOnly && (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); openModal('product', undefined, product) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_products', product.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                        </>
+                      )}
                       <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
                     </div>
                   </div>
@@ -436,7 +526,7 @@ export default function ProposalDetailPage() {
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Rotas</h4>
-                          <button onClick={() => openModal('route', product.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Rota</button>
+                          {!readOnly && <button onClick={() => openModal('route', product.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Rota</button>}
                         </div>
 
                         {(product.proposal_routes || []).filter((r: any) => r.is_active).length === 0 && (
@@ -464,8 +554,12 @@ export default function ProposalDetailPage() {
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <button onClick={(e) => { e.stopPropagation(); openModal('route', product.id, route) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_routes', route.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                                    {!readOnly && (
+                                      <>
+                                        <button onClick={(e) => { e.stopPropagation(); openModal('route', product.id, route) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_routes', route.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                                      </>
+                                    )}
                                     <span className="text-gray-400 text-xs">{routeOpen ? '▲' : '▼'}</span>
                                   </div>
                                 </div>
@@ -474,7 +568,7 @@ export default function ProposalDetailPage() {
                                   <div className="border-t border-gray-100 px-4 py-3 space-y-3">
                                     <div className="flex justify-between items-center">
                                       <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Itens de Frete</h5>
-                                      <button onClick={() => openModal('freight', route.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Frete</button>
+                                      {!readOnly && <button onClick={() => openModal('freight', route.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Frete</button>}
                                     </div>
 
                                     {(route.proposal_freight_items || []).filter((f: any) => f.is_active).length === 0 && (
@@ -499,8 +593,12 @@ export default function ProposalDetailPage() {
                                               </p>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                              <button onClick={(e) => { e.stopPropagation(); openModal('freight', route.id, item) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
-                                              <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_freight_items', item.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                                              {!readOnly && (
+                                                <>
+                                                  <button onClick={(e) => { e.stopPropagation(); openModal('freight', route.id, item) }} className="text-xs text-gray-500 hover:text-gray-900">Editar</button>
+                                                  <button onClick={(e) => { e.stopPropagation(); handleSoftDelete('proposal_freight_items', item.id) }} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                                                </>
+                                              )}
                                               <span className="text-gray-400 text-xs">{itemOpen ? '▲' : '▼'}</span>
                                             </div>
                                           </div>
@@ -509,7 +607,7 @@ export default function ProposalDetailPage() {
                                             <div className="border-t border-gray-100 px-3 py-2.5 space-y-2">
                                               <div className="flex justify-between items-center">
                                                 <h6 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">NCMs</h6>
-                                                <button onClick={() => openModal('ncm', item.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ NCM</button>
+                                                {!readOnly && <button onClick={() => openModal('ncm', item.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ NCM</button>}
                                               </div>
                                               {(item.proposal_freight_ncms || []).length === 0 && (
                                                 <p className="text-xs text-gray-400">Nenhum NCM cadastrado.</p>
@@ -517,10 +615,12 @@ export default function ProposalDetailPage() {
                                               {(item.proposal_freight_ncms || []).map((ncm: any) => (
                                                 <div key={ncm.id} className="flex justify-between items-center text-xs bg-white rounded px-3 py-2 border border-gray-100">
                                                   <span className="text-gray-700">{ncm.ncm_code} — {ncm.description || 'sem descrição'}</span>
-                                                  <div className="flex items-center gap-2">
-                                                    <button onClick={() => openModal('ncm', item.id, ncm)} className="text-gray-500 hover:text-gray-900">Editar</button>
-                                                    <button onClick={() => handleHardDelete('proposal_freight_ncms', ncm.id)} className="text-red-500 hover:text-red-700">Remover</button>
-                                                  </div>
+                                                  {!readOnly && (
+                                                    <div className="flex items-center gap-2">
+                                                      <button onClick={() => openModal('ncm', item.id, ncm)} className="text-gray-500 hover:text-gray-900">Editar</button>
+                                                      <button onClick={() => handleHardDelete('proposal_freight_ncms', ncm.id)} className="text-red-500 hover:text-red-700">Remover</button>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               ))}
                                             </div>
@@ -540,7 +640,7 @@ export default function ProposalDetailPage() {
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Despesas</h4>
-                          <button onClick={() => openModal('expense', product.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Despesa</button>
+                          {!readOnly && <button onClick={() => openModal('expense', product.id)} className="text-xs text-emerald-700 hover:text-emerald-900 font-medium">+ Despesa</button>}
                         </div>
 
                         {(product.proposal_expenses || []).filter((x: any) => x.is_active).length === 0 && (
@@ -566,8 +666,12 @@ export default function ProposalDetailPage() {
                                   <td className="px-3 py-2 text-gray-700">{fmtMoney(exp.purchase_amount, exp.currencies?.symbol)}</td>
                                   <td className="px-3 py-2 text-gray-700">{fmtMoney(exp.sale_amount, exp.currencies?.symbol)}</td>
                                   <td className="px-3 py-2 text-right">
-                                    <button onClick={() => openModal('expense', product.id, exp)} className="text-gray-500 hover:text-gray-900 mr-2">Editar</button>
-                                    <button onClick={() => handleSoftDelete('proposal_expenses', exp.id)} className="text-red-500 hover:text-red-700">Remover</button>
+                                    {!readOnly && (
+                                      <>
+                                        <button onClick={() => openModal('expense', product.id, exp)} className="text-gray-500 hover:text-gray-900 mr-2">Editar</button>
+                                        <button onClick={() => handleSoftDelete('proposal_expenses', exp.id)} className="text-red-500 hover:text-red-700">Remover</button>
+                                      </>
+                                    )}
                                   </td>
                                 </tr>
                               ))}
