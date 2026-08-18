@@ -228,6 +228,12 @@ export default function ProposalDetailPage() {
             <h2 className="text-2xl font-semibold text-gray-900">{proposal?.reference_number}</h2>
             <p className="text-gray-500 text-sm">Aberta em {proposal?.opening_date ? new Date(proposal.opening_date + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</p>
           </div>
+          <button
+            onClick={() => window.open(`/proposals/${proposalId}/imprimir`, '_blank', 'noopener,noreferrer')}
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-4 py-2 hover:bg-gray-50 transition flex items-center gap-2"
+          >
+            🖨 Gerar PDF
+          </button>
         </div>
 
         <div className="flex border-b border-gray-200 mb-6">
